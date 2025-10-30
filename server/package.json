@@ -2,7 +2,7 @@
   "name": "bank-sandwich",
   "version": "1.0.0",
   "type": "commonjs",
-  "scripts": { "test": "jest -q" },
+  "scripts": { "test": "jest" },
   "dependencies": {
     "axios": "1.7.7",
     "dotenv": "16.4.5",
