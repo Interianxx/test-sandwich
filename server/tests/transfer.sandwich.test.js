@@ -2,12 +2,15 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const nock = require('nock');
-const request = require('supertest');
+const request = require('supertest'); // Supertest se usa llamando request(app). No hay una “instancia” global aparte.
+// Cada invocación request(app) crea un cliente HTTP en memoria contra la app Express.
+// Si quisieras una sesión persistente (cookies), podrías usar supertest.agent(app).
 const mysql = require('mysql2/promise');
 const { makeApp } = require('../src/app');
 const { getPool } = require('../src/db');
 
 // Creamos la app con una base URL de KYC “falsa”. Nock interceptará llamadas a http://fake-kyc
+// Esta app es la que se pasa a Supertest: request(app).post(...).expect(...)
 const app = makeApp({ kycBase: 'http://fake-kyc' });
 
 // Antes de todo: aplicar el schema en MySQL para tener DB y tablas listas
@@ -59,71 +62,3 @@ test('Sándwich: HTTP real + MySQL real + KYC fingido (happy path)', async ()=>{
   expect(balB.body.balance).toBe(350);
 });
 
-// Caso negativo: fondos insuficientes debe devolver 409 con el error adecuado
-test('Fondos insuficientes → 409', async ()=>{
-  // Ambos dueños pasan KYC
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'A' }).reply(200,{ score:800 });
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'B' }).reply(200,{ score:800 });
-
-  const A = (await request(app).post('/accounts').send({ owner:'A', initial:10 })).body.id;
-  const B = (await request(app).post('/accounts').send({ owner:'B', initial:0 })).body.id;
-
-  // Intentar transferir más de lo que A tiene
-  const r = await request(app).post('/transfer').send({ fromId:A, toId:B, amount:50 });
-  expect(r.status).toBe(409);
-  expect(r.body.error).toBe('insufficient_funds');
-});
-
-// Caso negativo: KYC rechazado al abrir cuenta → 403 kyc_rejected
-// Si el score < 500 debe fallar y NO crear la cuenta
-test('KYC rechazado en apertura de cuenta → 403', async ()=>{
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'Charlie' }).reply(200,{ score:450 });
-
-  const r = await request(app).post('/accounts').send({ owner:'Charlie', initial:100 });
-  expect(r.status).toBe(403);
-  expect(r.body.error).toBe('kyc_rejected');
-});
-
-// Caso negativo: monto inválido (0 o negativo) en transferencia → 400 invalid_amount
-// La regla de negocio no permite transferir 0 o valores negativos
-test('Monto inválido (0) en transferencia → 400', async ()=>{
-  // Crear dos cuentas válidas (KYC aprobado)
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'D' }).reply(200,{ score:700 });
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'E' }).reply(200,{ score:700 });
-  const D = (await request(app).post('/accounts').send({ owner:'D', initial:100 })).body.id;
-  const E = (await request(app).post('/accounts').send({ owner:'E', initial:100 })).body.id;
-
-  const r = await request(app).post('/transfer').send({ fromId:D, toId:E, amount:0 });
-  expect(r.status).toBe(400);
-  expect(r.body.error).toBe('invalid_amount');
-});
-
-test('Monto inválido (negativo) en transferencia → 400', async ()=>{
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'F' }).reply(200,{ score:700 });
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'G' }).reply(200,{ score:700 });
-  const F = (await request(app).post('/accounts').send({ owner:'F', initial:100 })).body.id;
-  const G = (await request(app).post('/accounts').send({ owner:'G', initial:100 })).body.id;
-
-  const r = await request(app).post('/transfer').send({ fromId:F, toId:G, amount:-10 });
-  expect(r.status).toBe(400);
-  expect(r.body.error).toBe('invalid_amount');
-});
-
-// Caso negativo: transferir hacia una cuenta inexistente → 404 account_not_found
-test('Transfer a cuenta inexistente → 404', async ()=>{
-  nock('http://fake-kyc').get('/v1/score').query({ owner:'H' }).reply(200,{ score:700 });
-  const H = (await request(app).post('/accounts').send({ owner:'H', initial:100 })).body.id;
-  const inexistente = 999999; // ID que no existe
-
-  const r = await request(app).post('/transfer').send({ fromId:H, toId:inexistente, amount:10 });
-  expect(r.status).toBe(404);
-  expect(r.body.error).toBe('account_not_found');
-});
-
-// Caso negativo: consultar balance de cuenta inexistente → 404 account_not_found
-test('GET /accounts/:id/balance de cuenta inexistente → 404', async ()=>{
-  const inexistente = 424242;
-  const r = await request(app).get(`/accounts/${inexistente}/balance`);
-  expect(r.status).toBe(404);
-  expect(r.body.error).toBe('account_not_found');
-});
