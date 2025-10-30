@@ -117,3 +117,24 @@ Trade-offs
 
 ## Licencia
 Uso educativo/demostrativo.
+
+
+## FAQ
+### ¿Por qué el test de "fondos insuficientes" aparece como PASSED si es un error?
+Porque el objetivo del test es verificar que la aplicación responda con el error correcto. En pruebas, un caso negativo “pasa” cuando el sistema devuelve exactamente lo que se espera para ese escenario de error.
+
+En el test Fondos insuficientes → 409, se espera que la API responda con:
+- Código HTTP 409
+- Cuerpo `{ error: 'insufficient_funds' }`
+
+Si la API devolviera 200 o un error distinto, el test fallaría. Por eso, ver PASSED significa “el sistema manejó correctamente la situación de fondos insuficientes”.
+
+### ¿Cómo puedo ver ese test fallar a propósito?
+- Opción 1: Cambia la expectativa del test temporalmente. Por ejemplo, cambia `expect(r.status).toBe(409)` por `expect(r.status).toBe(200)` y ejecútalo: el test debe FALLAR.
+- Opción 2: Rompe la lógica en `server/src/repo.js` o `server/src/service.js` que lanza `insufficient_funds` (no recomendado en código real, solo educativo).
+
+### ¿Cómo ejecuto sólo ese test?
+Dentro de `server/`:
+- `npm test -- -t "Fondos insuficientes"`
+
+Esto ejecuta únicamente los tests cuyo nombre contenga “Fondos insuficientes”.
