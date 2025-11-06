@@ -138,3 +138,31 @@ Dentro de `server/`:
 - `npm test -- -t "Fondos insuficientes"`
 
 Esto ejecuta únicamente los tests cuyo nombre contenga “Fondos insuficientes”.
+
+### ¿Dónde se instancia Supertest?
+No hay una “instancia” global que tengas que crear manualmente. Se importa la función `supertest` y se usa como `request(app)` (en el test la variable `request` es el import de supertest). Cada llamada `request(app)` crea un cliente HTTP en memoria contra tu app de Express.
+
+Ejemplo minimal basado en nuestros tests:
+
+```js
+const request = require('supertest');
+const { makeApp } = require('./src/app');
+
+const app = makeApp({ kycBase: 'http://fake-kyc' });
+
+// Crear cuenta
+await request(app)
+  .post('/accounts')
+  .send({ owner: 'Alice', initial: 1000 })
+  .expect(201);
+
+// Si quisieras mantener cookies/sesión entre múltiples requests, usa:
+// const agent = request.agent(app);
+// await agent.post('/login').send({ user, pass });
+// await agent.get('/me').expect(200);
+```
+
+En nuestro repo, esto ocurre en `server/tests/transfer.sandwich.test.js`:
+- `const request = require('supertest')`
+- `const app = makeApp({ kycBase: 'http://fake-kyc' })`
+- Luego se invoca `request(app).post(...).expect(...)`.
